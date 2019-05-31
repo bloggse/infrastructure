@@ -1,0 +1,12 @@
+- hosts: all
+  roles:
+  - role: common
+
+- hosts: vpn
+  roles:  
+  - { role: '../../ansible-shared/roles/firewall' }
+  - { role: '../../ansible-shared/roles/tinc' }
+
+- hosts: elasticsearch
+  roles:
+  - role: elastic_master

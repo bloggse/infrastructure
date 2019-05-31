@@ -1,0 +1,3 @@
+Address = [% node.physical_ip %][% " " %][% vpn_ctrl.vpn_port %]
+Subnet = [% vpn_ctrl.vpn_ip %]/[% vpn_ctrl.vpn_subnet_sidr_netmask %]
+

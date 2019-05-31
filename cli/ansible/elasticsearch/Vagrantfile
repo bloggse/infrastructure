@@ -1,0 +1,57 @@
+# Defines our Vagrant environment
+#
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+Vagrant.configure("2") do |config|
+  N = 6
+  (1..N).each do |i|
+    config.vm.define "elastic#{i}" do |node|
+        node.vm.box = "centos/7"
+        node.vm.hostname = "elastic#{i}"
+        node.vm.network :private_network, ip: "12.0.0.1#{i}"
+        node.vm.provider "virtualbox" do |vb|
+          vb.memory = 1024
+        end
+        node.vm.provision :shell, path: "ansible/bootstrap.sh", args: [N], run: "once"
+
+        if i == N
+          node.vm.provision :ansible do |ansible|
+            #ansible.playbook          = "ansible/simple.yml"
+            ansible.playbook          = "ansible/site.yml"
+            ansible.limit             = "all"
+            ansible.sudo              = true
+            ansible.host_vars = {
+              "elastic1" => {"elastic_http_port" => 9200, "elastic_tcp_port" => 9300, "elastic_instance_name" => "elastic1" },
+              "elastic2" => {"elastic_http_port" => 9201, "elastic_tcp_port" => 9301, "elastic_instance_name" => "elastic2" },
+              "elastic3" => {"elastic_http_port" => 9202, "elastic_tcp_port" => 9302, "elastic_instance_name" => "elastic3" },
+              "elastic4" => {"elastic_http_port" => 9203, "elastic_tcp_port" => 9303, "elastic_instance_name" => "elastic4" },
+              "elastic5" => {"elastic_http_port" => 9204, "elastic_tcp_port" => 9304, "elastic_instance_name" => "elastic5" },
+              "elastic6" => {"elastic_http_port" => 9205, "elastic_tcp_port" => 9305, "elastic_instance_name" => "elastic6" }
+            }
+            ansible.groups = {
+              "elasticsearch_masters" => ["elastic1", "elastic2", "elastic3"],
+              "elasticsearch_masters:vars" => {
+                "is_master" => true,
+                "memory_lock" => false, # Memory lock will cause java to stall on startup randomly on a local machine
+                "zen_hosts" => ["elastic1:9300", "elastic2:9301", "elastic3:9302"],
+                "cluster_name" => "elastic-cluster",
+                "network_host_filter" => "0.0.0.0"
+              },
+
+              "elasticsearch_data" => ["elastic4", "elastic5", "elastic6"],
+              "elasticsearch_data:vars" => {
+                "is_master" => false,
+                "memory_lock" => false, # Memory lock will cause java to stall on startup randomly on a local machine
+                "zen_hosts" => ["elastic1:9300", "elastic2:9301", "elastic3:9302"],
+                "cluster_name" => "elastic-cluster",
+                "network_host_filter" => "0.0.0.0"
+              }
+            }
+          end
+        end
+    end
+  end
+
+end
+ 

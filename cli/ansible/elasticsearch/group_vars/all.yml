@@ -1,0 +1,28 @@
+---
+java_package: "java-1.8.0-openjdk-devel"
+
+physical_ip: eth1
+
+# Common node
+es_data_dirs:
+  - "/opt/elasticsearch/data"
+es_log_dir: "/opt/elasticsearch/logs"
+es_scripts: false
+es_templates: false
+es_version_lock: false
+es_heap_size: 1g
+es_enable_xpack: false
+
+es_instance_name: "{{elastic_instance_name}}"
+es_config:
+  # https://www.elastic.co/guide/en/elasticsearch/reference/5.6/setting-system-settings.html#systemd
+  bootstrap.memory_lock: "{{true if (memory_lock == 'true') else false}}"
+  cluster.name: "{{cluster_name}}"
+  discovery.zen.ping.unicast.hosts: "{{zen_hosts}}"
+  http.port: "{{elastic_http_port}}"
+  network.host: "{{network_host_filter}}"
+  node.name: "{{elastic_instance_name}}"
+  node.master: "{{true if (is_master == 'true') else false}}"
+  node.data: "{{true if (is_master == 'false') else false}}"
+  transport.tcp.port: "{{elastic_tcp_port}}"
+es_api_port: "{{elastic_http_port}}"

@@ -1,0 +1,123 @@
+user [% ingress.nginx_user %][% " " %][% ingress.nginx_user %];
+events {
+  worker_connections 1024;
+}
+
+http {
+  lua_shared_dict auto_ssl 1m;
+  lua_shared_dict auto_ssl_settings 64k;
+  resolver 8.8.8.8 ipv6=off;
+
+  init_by_lua_block {
+    auto_ssl = (require "resty.auto-ssl").new()
+    auto_ssl:set("allow_domain", function(domain)
+      return true
+    end)
+    auto_ssl:init()
+  }
+
+  init_worker_by_lua_block {
+    auto_ssl:init_worker()
+  }
+
+  server {
+    listen 443 ssl;
+    ssl_certificate_by_lua_block {
+      auto_ssl:ssl_certificate()
+    }
+    ssl_certificate /etc/ssl/resty-auto-ssl-fallback.crt;
+    ssl_certificate_key /etc/ssl/resty-auto-ssl-fallback.key;
+
+    include /usr/local/openresty/nginx/conf/sites/*.conf;
+
+    location /hello {
+      default_type text/html;
+      content_by_lua '
+        ngx.say("<p>hello, world! you are safe</p>")
+      ';
+    }
+    
+  }
+
+  server {
+    listen 80;
+    location /.well-known/acme-challenge/ {
+      content_by_lua_block {
+        auto_ssl:challenge_server()
+      }
+    }
+
+    location /hello {
+      default_type text/html;
+      content_by_lua '
+        ngx.say("<p>hello, world</p>")
+      ';
+    }
+
+  }
+
+  server {
+    listen 127.0.0.1:8999;
+    client_body_buffer_size 128k;
+    client_max_body_size 128k;
+
+    location / {
+      content_by_lua_block {
+        auto_ssl:hook_server()
+      }
+    }
+  }
+
+  {{- range $ingress_key := ls "/ingress"}}
+    {{ $url := split $ingress_key ":" }}
+    {{ $host := index $url 0 }}
+    {{ $port := index $url 1 }}
+
+    {{- $ingress := json (getv (printf "/ingress/%s" $ingress_key))}}
+
+    {{- if eq $ingress.publish.ssl true}}
+  server {
+    # We need to force redirect to https
+    listen 80;
+    server_name {{$ingress.publish.host_name}};
+
+    location /.well-known/acme-challenge/ {
+      content_by_lua_block {
+        auto_ssl:challenge_server()
+      }
+    }
+
+    location / {
+      return 301 https://$host$request_uri;
+    }
+  }
+    {{- end}}
+
+  server {
+    {{- if eq $ingress.publish.ssl false}}
+    listen {{$ingress.publish.port}};
+    server_name {{$ingress.publish.host_name}};
+    {{- else}}
+    listen  {{$ingress.publish.port}} ssl;
+    server_name {{$ingress.publish.host_name}};
+    
+    ssl_certificate_by_lua_block {
+      auto_ssl:ssl_certificate()
+    }
+
+    ssl_certificate /etc/ssl/resty-auto-ssl-fallback.crt;
+    ssl_certificate_key /etc/ssl/resty-auto-ssl-fallback.key;
+    {{- end}}
+
+    {{range $ingress.location }}
+    location {{.location}} {
+      {{- if .rewrite}}
+      rewrite {{.rewrite}};
+      {{- end}}
+      {{- $app := json (getv (printf "/%s/%s/meta_data" .type .name))}}
+      proxy_pass {{or $app.publish.protocol "http://"}}127.0.0.1:{{$app.publish.port}}{{or $app.publish.path ""}};
+    }
+    {{- end}}
+  }
+  {{- end}}
+}

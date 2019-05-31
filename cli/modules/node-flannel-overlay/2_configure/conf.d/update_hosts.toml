@@ -1,0 +1,10 @@
+[template]
+keys = [
+  "/node"
+]
+
+mode = "0750"
+src = "update_hosts.tmpl"
+dest = "/tmp/hosts_flannel-wg"
+
+reload_cmd = "/bin/bash /usr/local/bin/update_hosts.sh /tmp/hosts_flannel-wg"

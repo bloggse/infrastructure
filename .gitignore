@@ -1,0 +1,13 @@
+# Mongodb
+.idea
+.vagrant
+packages/*
+site.retry
+*.pyc
+.vendor
+.bundle
+tinc_keys
+**/tinc_keys/**/*
+hosts_*
+.vault.pwd
+cli/.hosts

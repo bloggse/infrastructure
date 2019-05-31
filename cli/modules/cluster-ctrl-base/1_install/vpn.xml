@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<zone target="ACCEPT">
+  <short>Accept everything</short>
+  <description>This is used for Tinc VPN private networks. Extend it programmatically using 'firewall-cmd'.</description>
+</zone>

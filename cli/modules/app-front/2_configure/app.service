@@ -1,0 +1,22 @@
+[Unit]
+Description=Nodejs: [% app.name %]
+After=network-online.target
+
+[Service]
+Restart=on-failure
+WorkingDirectory=/var/www/[% app.work_dir %]
+
+ExecStart=/usr/bin/node -r esm /var/www/[% app.exec_path %]
+ExecStartPost=/usr/local/bin/register_app.sh register-app-instance --type=[% app.type %] --name=[% app.name %] --value="{ \"node\": \"[% node.name %]\", \"ip\": \"[% node.name %]\", \"port\": [% app.expose %]0 }"
+ExecStop=/usr/local/bin/register_app.sh unregister-app-instance --type=[% app.type %] --name=[% app.name %]
+EnvironmentFile=/etc/cluster/services.env
+Environment="NODE_ENV=production"
+Environment="EXPOSE=[% app.expose %]0"
+Environment="INSTAGRAM_CALLBACK_URI=[% instagram.callback_uri %]"
+Environment="INSTAGRAM_LOGIN_CALLBACK_URI=[% instagram.login_callback_uri %]"
+Environment="INSTAGRAM_CLIENT_ID=[% instagram.client_id %]"
+Environment="INRGESS_API_URI=[% ingress.api_uri %]"
+Environment="INGRESS_API_UPLOAD_URI=[% ingress.api_upload_uri %]"
+
+[Install]
+WantedBy=multi-user.target

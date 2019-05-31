@@ -1,0 +1,11 @@
+[template]
+keys = [
+  "/ingress",
+  "/frontend",
+  "/backend"
+]
+mode = "0644"
+src = "nginx.conf.tmpl"
+dest = "/usr/local/openresty/nginx/conf/nginx.conf"
+
+reload_cmd = "systemctl reload openresty"

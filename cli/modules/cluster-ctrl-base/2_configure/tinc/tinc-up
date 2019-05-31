@@ -1,0 +1,2 @@
+#!/bin/bash
+/sbin/ifconfig $INTERFACE [% vpn_ctrl.vpn_ip %] netmask [% vpn_ctrl.vpn_netmask %]

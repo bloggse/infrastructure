@@ -1,0 +1,14 @@
+[template]
+keys = [
+  "/backend",
+  "/frontend",
+  "/service",
+  "/node"
+]
+
+mode = "0644"
+src = "haproxy.cfg.tmpl"
+dest = "/etc/haproxy/haproxy.cfg"
+#dest = "/etc/cluster/haproxy.cfg"
+
+reload_cmd = "systemctl reload haproxy"

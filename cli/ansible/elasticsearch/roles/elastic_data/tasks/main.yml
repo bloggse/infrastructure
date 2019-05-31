@@ -1,0 +1,6 @@
+- name: Common variables...
+  include_vars:
+    file: group_vars/all.yml
+- name: Elasticsearch data node
+  import_role:
+    name: elastic.elasticsearch

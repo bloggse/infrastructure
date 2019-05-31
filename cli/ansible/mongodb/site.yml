@@ -1,0 +1,12 @@
+- hosts: mongodb_cluster
+  vars:
+    mongodb_config_mongodb: true
+    mongodb_bind_ip:
+      - 0.0.0.0
+      #- 127.0.0.1
+    mongodb_replication: true
+    #pri_domain_name: test.vagrant.local
+  roles:
+    - setup
+    - { role: '../ansible-mongodb' }
+  tasks: []

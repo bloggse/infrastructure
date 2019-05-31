@@ -1,0 +1,19 @@
+# Volume to be used for MinIO server.
+MINIO_ROOT_DIR="/data/minio"
+# Use if you want to run MinIO on a custom port.
+MINIO_OPTS="--address :19000 --config-dir /etc/minio/mino.conf"
+# Activate browser
+MINIO_BROWSER=on
+
+# TODO: Move these secrets to a secret place...
+
+# Access Key of the server.
+MINIO_ACCESS_KEY=$MINIO_ACCESS_KEY
+# Secret key of the server.
+MINIO_SECRET_KEY=$MINIO_SECRET_KEY
+
+# We need to start minio like this: $ minio server [args] [servers]
+# where we at least have 4 servers for distributed mode to start working
+# one of these nodes has to match localhost
+MINIO_NODES={{range $key := ls "/service/minio/instance"}}{{$inst := json (getv (printf "/service/minio/instance/%s" $key))}}http://{{$inst.ip}}:{{$inst.port}}/data/minio {{end}}
+#MINIO_NODES={{range $key := ls "/service/minio/instance"}}{{$inst := json (getv (printf "/service/minio/instance/%s" $key))}}http://{{$inst.ip}}:{{$inst.port}}/data/minio {{end}}

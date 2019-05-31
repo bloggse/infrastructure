@@ -1,0 +1,403 @@
+#!/bin/sh
+CURR_PATH="$(cd "$(dirname "$0")" && pwd)"
+
+confirm() {
+    # Usage
+    # confirm || (echo "Good bye!" && exit -1)
+    # confirm && echo "That was a yes!"
+    # confirm "Your question? [y/N]" || echo "That was a no..."
+    read -r -p "${1:-Are you sure? [y/N]} " response
+    case "$response" in
+        [yY][eE][sS]|[yY]) 
+            true
+            ;;
+        *)
+            false
+            ;;
+    esac
+}
+
+getCliScript() {
+  if [ -d "./ansible-$service" ]; then
+    OUTP_DIR="./ansible-$service"
+    if [ -f "$OUTP_DIR/${service}.sh" ]; then
+      OUTP_SCRIPT="./${service}.sh"
+    else
+      scriptNameFromService $service;
+      OUTP_SCRIPT="./$outp"
+    fi
+  else
+    OUTP_DIR="./app-$service"
+    OUTP_SCRIPT="./app.sh"
+  fi
+}
+
+##
+if [ "$1" = "help" ]; then
+  echo "Usage: infrastructure [help | [command]]"
+  echo ""
+  echo "create -- create servers"
+  echo "rebuild -- rebuild servers"
+  echo "play -- run ansible scripts on all servers"
+  echo "destroy -- destroy servers"
+  echo "ssh [node###] -- connect to given node by ssh"
+  echo "deploy [github URI] -- deploy given application to cluster"
+  echo ""
+  exit 0
+fi
+
+serviceNameFromNode() {
+  outp=`printf '%s\n' "${1//[[:digit:]]/}"`
+}
+
+shortForm() {
+  case "$1" in
+    elasticsearch)
+      outp="elastic"
+      ;;
+    controller)
+      outp="ctrl"
+      ;;
+    *)
+      outp="$1"
+      ;;
+  esac
+}
+
+setDomainFromNodeName() {
+  serviceNameFromNode $1
+  case "$outp" in
+    mongodb)
+      outp="flstr.cloud"
+      ;;
+    *)
+      outp="flstr.cloud"
+      ;;
+  esac
+}
+
+vpnIpRangeStart() {
+  case "$1" in
+    controller)
+      outp=0
+      ;;
+    mongodb)
+      outp=16
+      ;;
+    redis)
+      outp=32
+      ;;
+    elasticsearch)
+      outp=48
+      ;;
+    nginx)
+      outp=64
+      ;;
+    nodejs)
+      outp=128
+      ;;
+    *)
+      outp=256
+      ;;
+  esac
+}
+
+scriptNameFromService() {
+  shortForm $1
+  outp="$outp.sh"
+}
+
+getClusterNodes() {
+  # Get nodes by checking servers using hcloud
+  IFS=$'\n'
+  outp=""
+  for TMP in `hcloud server list | grep " $node_prefix"` ; do
+    if [ ! -z outp ]; then
+      # Add space between entries
+      outp="$outp "
+    fi
+    IFS=' ' read ID NAME STATUS MASTER_IPV4 MASTER_IPV6 DATACENTER <<< $TMP
+    outp="${outp}$NAME"
+  done
+}
+
+# Data service components
+services="elasticsearch redis mongodb"
+
+# All system components
+systems="$services nginx nodejs" # nodejs || k8s
+
+# System components with specific uses
+service_consumers="nodejs"
+ingress="nginx"
+ingress_targets="nodejs"
+
+if [ "$1" = "create" ]; then
+  if [ ! -z "$2" ]; then
+    systems="$2"; echo "*** Only running for $systems ***"
+  fi
+
+  for service in $systems; do
+    getCliScript; (cd $OUTP_DIR && $OUTP_SCRIPT create)
+  done
+fi
+
+if [ "$1" = "rebuild" ]; then
+  confirm || exit -1
+  if [ ! -z "$2" ]; then
+    systems="$2"; echo "*** Only running for $systems ***"
+  fi
+
+  for service in $systems; do
+    #scriptNameFromService $service; scrpt=$outp
+    #(cd ./ansible-$service && echo "y" | ./$scrpt rebuild)
+    getCliScript; (cd $OUTP_DIR && echo "y" | $OUTP_SCRIPT rebuild)
+  done
+fi
+
+if [ "$1" = "play" ]; then
+  if [ ! -z "$2" ]; then
+    systems="$2"; echo "*** Only running for $systems ***"
+  fi
+
+  for service in $systems; do
+    #scriptNameFromService $service; scrpt=$outp
+    #(cd ./ansible-$service && ./$scrpt play)
+    getCliScript; (cd $OUTP_DIR && $OUTP_SCRIPT play)
+  done
+fi
+
+if [ "$1" = "destroy" ]; then
+  confirm || exit -1
+  if [ ! -z "$2" ]; then
+    systems="$2"; echo "*** Only running for $systems ***"
+  fi
+
+  for service in $systems; do
+    #scriptNameFromService $service; scrpt=$outp
+    # (cd ./ansible-$service && echo "y" | ./$scrpt destroy)
+    getCliScript; (cd $OUTP_DIR && echo "y" | $OUTP_SCRIPT destroy)
+  done
+fi
+
+if [ "$1" = "ssh" ]; then
+  serviceNameFromNode $2; service=$outp
+
+  #scriptNameFromService $service; scrpt=$outp
+  getCliScript; (cd $OUTP_DIR && $OUTP_SCRIPT ssh $2 --no-check)
+fi
+
+# if [ "$1" = "status" ]; then
+#   #for service in $systems; do
+#   serviceNameFromNode $2; service=$outp
+#   scriptNameFromService $service; scrpt=$outp
+#   # printf "$service"
+#   (./cli/cluster ./ansible-$service/$scrpt cmd $2 --no-check "bash -c 'firewall-cmd --list-services && firewall-cmd --list-ports'")
+#   #done
+# fi
+
+if [ "$1" = "cmd" ]; then
+  #for service in $services; do
+  serviceNameFromNode $2; service=$outp
+  #scriptNameFromService $service; scrpt=$outp
+  # printf "$service"
+  #(./cli/cluster ./ansible-$service/$scrpt cmd $2 --no-check "bash -c '$3'")
+  getCliScript; (./cli/cluster $OUTP_DIR/$OUTP_SCRIPT cmd $2 --no-check "bash -c '$3'")
+  #done
+fi
+
+if [ "$1" = "debug" ]; then
+  #for service in $services; do
+  serviceNameFromNode $2; service=$outp
+  #scriptNameFromService $service; scrpt=$outp
+  # printf "$service"
+  #(./cli/cluster ./ansible-$service/$scrpt debug $2)
+  getCliScript; (./cli/cluster $OUTP_DIR/$OUTP_SCRIPT debug $2)
+  #done
+fi
+
+if [ "$1" = "overlay" ]; then
+
+  if [ ! -z "$2" ]; then
+    services="$2"
+    echo "*** Only running for $services ***"
+  fi
+
+  if [ -d "overlay/output/vpn_ctrl" ]; then
+    rm -r overlay/output/vpn_ctrl
+  fi
+
+  # Generate inventory
+  for service in $services; do
+    # Remove the file with list of failed nodes
+    if [ -f "./overlay/site_overlay.retry" ]; then
+      rm ./overlay/site_overlay.retry
+    fi
+
+    $0 inventory $service > ./overlay/hosts_overlay_network_$service
+  done
+
+
+  # And build nodes
+  for service in $services; do
+    echo "Running overlay network for $service"
+    ./cli/cluster $0 play ./overlay/site_overlay.yml ./overlay/hosts_overlay_network_$service
+  done
+
+  if [ -s "./overlay/site_overlay.retry" ]; then
+    echo "There were some issues with the following servers:"
+    cat ./overlay/site_overlay.retry
+    echo "You need to rerun the overlay action"
+  fi
+fi
+
+if [ "$1" = "deploy" ]; then
+  echo "Deploy applications on: $3"
+  (cd $2 && ./app.sh deploy "$3")
+
+  # $2 is folder with app config to deploy (i.e. ./app-admin-api)
+  # echo "Deploying app $2"
+
+  # echo "1. Creating servers"
+  # (cd $2 && ./app.sh create)
+  # (cd $2 && ./app.sh play)
+
+  # echo "2. Create overlay network and configuring services"
+  # ./infrastructure overlay
+
+  # echo "3. Deploy application"
+  # (cd $2 && ./app.sh deploy)
+
+
+  # Scale up
+    # Create new servers
+    # If created re-run overlay for all apps
+    # Deploy app to created servers
+    # Test if working
+    # Update nginx
+  
+  # Scale down
+    # Update nginx
+    # Re-run overlay for all apps
+    # Destroy servers
+  
+  # Update
+    # Deploy app to server
+    # Test if working
+    # Update nginx to run against new version
+    # Clean up old version
+
+
+  # TODO: clone/update application on n-number of servers according
+  # to settings in application project root
+
+  # TODO: Add/update ingress rules for nginx to access application
+fi
+
+#########################################
+##   GENERATE ANSIBLE INVENTORY FILE   ##
+#########################################
+
+if [ "$1" = "inventory" ]; then
+  # Which service are we configuring?
+  service=$2
+
+  # Create the ansible inventory file to use with playbook
+  echo "# Inventory file for elasticsearch on ansible"
+  echo "[all:vars]"
+  echo "ansible_user=root"
+  echo "ansible_ssh_private_key_file=~/.ssh/$SSH_KEY_NAME"
+  echo "ansible_ssh_common_args='-o StrictHostKeyChecking=no' # WARNING! This should be removed on live servers"
+  echo ""
+  echo "etcd_hostname=controller001"
+  echo "etcd_port=2379"
+  echo ""
+
+  IFS=$'\n '
+
+  ## -------------------------------------------
+  ## --  Connect Nodejs servers with services --
+  ## --             and ingress               --
+  ## ------------------------------------------- 
+
+  vpn_port=670
+
+  vpn_port=$((vpn_port + 1))
+  vpn_ports=$vpn_port
+  vpn_ip_prefix="21.0.0"
+  vpnIpRangeStart $service; vpn_ip_range_start=$outp
+  vpn_name="vpn_ctrl"
+  # These are the controller in the etcd-cluster
+  node_prefix="controller"
+  getClusterNodes; controller_nodes=$outp
+  # These are the controller in the service-cluster
+  node_prefix="$service"
+  getClusterNodes; member_nodes=$outp
+  
+  echo "[overlay_network]"
+
+  echo "# Controller nodes"
+  ip=1
+  IFS=' ' 
+  for host in $controller_nodes; do
+    setDomainFromNodeName $host; DOMAIN=$outp
+    vpn_ip="$vpn_ip_prefix.$ip"
+    echo "$host vpn_ip=$vpn_ip ansible_host=$host.$DOMAIN type=controller"
+    ip=$((ip + 1))
+  done
+  echo ""
+
+  echo "# Member nodes"
+  ip=$vpn_ip_range_start
+  IFS=' ' 
+  for host in $member_nodes; do
+    setDomainFromNodeName $host; DOMAIN=$outp
+    vpn_ip="$vpn_ip_prefix.$ip"
+    echo "$host vpn_ip=$vpn_ip ansible_host=$host.$DOMAIN type=member"
+    ip=$((ip + 1))
+  done
+  echo ""
+
+  echo "[overlay_network:vars]"
+  echo "service=$service"
+  echo ""
+  ## -------------------------------------------
+
+  if [[ "$service_consumers $services" == *"$service"* ]]; then
+    # Mark node as service consumer
+    is_service_consumer="is_service_consumer=false"
+    if [[ $service_consumers == *"$service"* ]]; then
+      is_service_consumer="is_service_consumer=true"
+    fi
+
+    # Mark node as service (nodes can both be a service and service consumer)
+    is_service="is_service=false"
+    if [[ $services == *"$service"* ]]; then
+      is_service="is_service=true"
+    fi
+
+    echo "[service-network]"
+    IFS=' ' 
+    for host in $member_nodes; do
+      echo "$host $is_service_consumer $is_service"
+    done
+    echo ""
+  fi
+  ## -------------------------------------------
+
+  if [[ "$ingress_targets $ingress" == *"$service"* ]]; then
+    # Mark node as an ingress
+    is_ingress="is_ingress=false"
+    if [[ $ingress == *"$service"* ]]; then
+      is_ingress="is_ingress=true"
+    fi
+
+    echo "[ingress-network]"
+    IFS=' ' 
+    for host in $member_nodes; do
+      echo "$host $is_ingress"
+    done
+    echo ""
+  fi
+  exit 0
+fi

@@ -1,0 +1,11 @@
+[Unit]
+Description=flannel overlay network
+After=network.target
+
+[Service]
+Type=notify
+ExecStart=/usr/local/sbin/flanneld --iface="[% node.physical_interface %]" --public-ip="[% node.physical_ip %]" --etcd-endpoints="[% FOR host IN etcd.nodes %]http://[% host.name %]:2379[%- "," IF not loop.last %][% END %]"
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

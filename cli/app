@@ -1,0 +1,246 @@
+#!/bin/bash
+CURR_PATH="$(cd "$(dirname "$0")" && pwd)"
+THIS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+SSH_OPTS="-o StrictHostKeyChecking=no"
+source ${THIS_DIR}/common/cluster_includes.sh
+CR=$'\n'
+_start=`date +%s`
+
+##
+if [ "$1" = "help" ]; then
+  echo <<EOF
+Usage: service [help | install | [--cluster=cluster.cfg command [options]]]
+
+install
+Install tools used by this cli
+
+./app --cluster=cluster.cfg deploy-app --app=app.cfg --target=node001[,...]
+./app --cluster=cluster.cfg remove-app --app=app.cfg --target=node001[,...]
+# TODO: update-app -- Update all instances of app with zero downtime
+
+./app --cluster=cluster.cfg register-ingress --ingress=ingress016.cfg
+./app --cluster=cluster.cfg unregister-ingress --ingress=ingress016.cfg
+
+./app --cluster=cluster.cfg create-mongo-user --db-username="" --db-password="" --db-name="" --target="[mongodb-nodes]"
+./app --cluster=cluster.cfg remove-mongo-user --db-username="" --db-name="" --target="[mongodb-nodes]"
+
+App is installed by:
+
+1. Running Ansible script (or similar) against these hosts
+
+2. Running modules specified in app config
+
+EOF
+  exit 0
+fi
+
+
+for i in "$@"; do
+  case $i in
+    -c=*|--cluster=*)
+    CLUSTER="${i#*=}"
+    shift # past argument=value
+    ;;
+    -f|--force)
+    FORCE=true
+    shift # past argument=value
+    ;;
+    -a=*|--app=*)
+    APP="${i#*=}"
+    shift # past argument=value
+    ;;
+    -i=*|--ingress=*)
+    INGRESS="${i#*=}"
+    shift # past argument=value
+    ;;
+    -t=*|--target=*)
+    TARGET="${i#*=}"
+    shift # past argument=value
+    ;;
+    --db-username=*)
+    DB_USER="${i#*=}"
+    shift # past argument=value
+    ;;
+    --db-password=*)
+    DB_PWD="${i#*=}"
+    shift # past argument=value
+    ;;
+    --db-name=*)
+    DB_NAME="${i#*=}"
+    shift # past argument=value
+    ;;
+    --default)
+    DEFAULT=YES
+    shift # past argument with no value
+    ;;
+    *)
+      if [[ "install deploy-app remove-app register-ingress unregister-ingress create-mongo-user remove-mongo-user" == *"${i}"* ]]; then
+        CMD="${i}"
+      fi
+    ;;
+  esac
+done
+
+
+if [ -z "$CLUSTER" ]; then
+  echo "Missing --cluster=[file.cfg] param"
+  exit 1
+elif [ ! -f "$CLUSTER" ]; then
+  echo "Given cluster config file '$CLUSTER' can't be found"
+  exit 1
+fi
+
+install() {
+  if hash hcloud 2>/dev/null; then
+    echo "Updating hcloud cli-tool..."
+    go get -u github.com/hetznercloud/cli/cmd/hcloud
+  else
+    echo "Installing hcloud cli-tool..."
+    go get -u github.com/hetznercloud/cli/cmd/hcloud
+    source < hcloud completion bash
+  fi
+
+  if hash jq 2>/dev/null; then
+    echo "Updating jq..."
+    brew upgrade jq
+  else
+    echo "Installing jq..."
+    brew install jq
+  fi
+
+  if hash now 2>/dev/null; then
+    echo "Updating now..."
+    npm i -g now
+  else
+    echo "Installing now..."
+    npm i -g now
+  fi
+}
+
+#######################
+##                   ##
+## Main Entry Points ##
+##                   ##
+#######################
+
+# -----------------------------------------------------------------------------------------------
+if [ "$CMD" = "install" ]; then
+  install
+fi
+
+# Read cluster settings
+source "$CLUSTER"
+
+# -----------------------------------------------------------------------------------------------
+if [ "$CMD" = "deploy-app" ]; then
+  [ -z $APP ] && echo "Missing --app" && exit -1
+  [ -z $TARGET ] && echo "Missing --target" && exit -1
+  source $APP
+
+  # These params are used by instance reg and unreg script
+  NEW_SERVERS=""
+  IFS=', '
+  for NODE_NAME in $TARGET; do
+    [ ! -z "$NEW_SERVERS" ] && NEW_SERVERS="$NEW_SERVERS "
+    NEW_SERVERS="${NEW_SERVERS}${NODE_NAME}"
+  done
+
+  setNodePrefix() {
+    NODE_PREFIX=${1//[[:digit:]]/}
+  }
+  setNodePrefix $NEW_SERVERS
+
+  # Always initialise first
+  runInitPhase "$MODULES"
+
+  # Run the app play. This is specific to the app config
+  # and could invoke ansible or similar
+  runPlay
+
+  # Run module configuration scripts just like when
+  runModulesConfigure "$MODULES"
+fi
+
+# -----------------------------------------------------------------------------------------------
+if [ "$CMD" = "update-app" ]; then
+  [ -z $REPOS ] && echo "Missing --repos" && exit -1
+  echo "TODO: update-app"
+fi
+
+# -----------------------------------------------------------------------------------------------
+if [ "$CMD" = "remove-app" ]; then
+  [ -z $APP ] && echo "Missing --app" && exit -1
+  [ -z $TARGET ] && echo "Missing --target" && exit -1
+  source $APP
+
+  IFS=","
+  for n in $TARGET;
+  do
+    if [ -z "$SERVERS" ]
+    then
+      SERVERS="$n"
+    else
+      SERVERS="$SERVERS $n"
+    fi
+  done 
+  # Run the app play. This is specific to the app config
+  # and could invoke ansible or similar
+  type -t runTeardown &>/dev/null && runTeardown
+  
+  # Run module configuration scripts just like when
+  runModulesTeardown "$MODULES" "$SERVERS"
+fi
+
+# -----------------------------------------------------------------------------------------------
+if [ "$CMD" = "register-ingress" ]; then
+  [ -z $INGRESS ] && echo "Missing --ingress" && exit -1  
+  source $INGRESS
+
+  ssh -i ~/.ssh/$SSH_KEY_NAME root@${CTRL_PREFIX}001.$DOMAIN $SSH_OPTS "bash -s " <<EOF
+    etcdctl set /ingress/$INGRESS_HOST:$INGRESS_PORT '{"publish": { "host_name": "$INGRESS_HOST", "port": $INGRESS_PORT, "ssl": $INGRESS_SSL }, "location": $INGRESS_LOCATION}'
+EOF
+fi
+
+# -----------------------------------------------------------------------------------------------
+if [ "$CMD" = "unregister-ingress" ]; then
+  [ -z $INGRESS ] && echo "Missing --ingress" && exit -1  
+  source $INGRESS
+
+  ssh -i ~/.ssh/$SSH_KEY_NAME root@${CTRL_PREFIX}001.$DOMAIN $SSH_OPTS "bash -s " <<EOF
+    etcdctl rm /ingress/$INGRESS_HOST:$INGRESS_PORT
+EOF
+fi
+
+# -----------------------------------------------------------------------------------------------
+if [ "$CMD" = "create-mongo-user" ]; then
+  [ -z $DB_USER ] && echo "Missing --db-username" && exit -1  
+  [ -z $DB_PWD ] && echo "Missing --db-password" && exit -1
+  [ -z $DB_NAME ] && echo "Missing --db-name" && exit -1
+  [ -z $TARGET ] && echo "Missing --target" && exit -1
+
+  IFS=","
+  for node in $TARGET
+  do
+    ssh -i ~/.ssh/$SSH_KEY_NAME root@${node}.$DOMAIN $SSH_OPTS "bash -s " <<EOF
+      mongo $DB_NAME --port 27017 --eval 'db.createUser({ user: "$DB_USER", pwd: "$DB_PWD", roles: [ "readWrite", "dbAdmin" ] })'
+EOF
+  done
+fi
+
+# -----------------------------------------------------------------------------------------------
+if [ "$CMD" = "remove-mongo-user" ]; then
+  [ -z $DB_USER ] && echo "Missing --db-username" && exit -1  
+  [ -z $DB_NAME ] && echo "Missing --db-name" && exit -1
+  [ -z $TARGET ] && echo "Missing --target" && exit -1
+
+  IFS=","
+  for node in $TARGET
+  do
+    ssh -i ~/.ssh/$SSH_KEY_NAME root@${node}.$DOMAIN $SSH_OPTS "bash -s " <<EOF
+      mongo $DB_NAME --port 27017 --eval 'db.dropUser("$DB_USER")'
+EOF
+  done
+fi
+
+_end=`date +%s`
+echo "Duration: $((_end-_start))"

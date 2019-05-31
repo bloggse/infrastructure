@@ -1,0 +1,4 @@
+{{range gets "/node/*" -}}
+	{{$node := json .Value -}}
+{{ $node.vpn_ip }} {{ $node.name }} # flannel-wg
+{{end -}}

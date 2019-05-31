@@ -1,0 +1,10 @@
+[template]
+keys = [
+  "/service/minio"
+]
+
+mode = "0644"
+src = "minio.tmpl"
+dest = "/etc/default/minio"
+
+reload_cmd = "systemctl restart minio"

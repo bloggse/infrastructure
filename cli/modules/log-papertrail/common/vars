@@ -1,0 +1,10 @@
+#!/bin/bash
+SSH_KEY_NAME=[% deploy.ssh_key_name %]
+SSH_OPTS="-o StrictHostKeyChecking=no"
+INIT_MODULE="[% module_name %]"
+
+DOMAIN=[% deploy.domain %]
+
+NODE_NAME=[% node.name %]
+
+PAPERTRAIL_LOG_TARGET="[% papertrail_log_target %]"

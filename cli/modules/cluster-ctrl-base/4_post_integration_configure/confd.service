@@ -1,0 +1,17 @@
+[Unit]
+Description=confd
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/confd/bin/confd -watch -backend etcd -interval 10 -node http://[% etcd.vpn_ip %]:[% etcd.port %]
+
+[Install]
+WantedBy=multi-user.target
+
+[%#
+etcd = {
+  vpn_ip => '123.123.123.123',
+  port => '2379'
+}
+%]

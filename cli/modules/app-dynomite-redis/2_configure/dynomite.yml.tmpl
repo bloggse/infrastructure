@@ -1,0 +1,24 @@
+dyn_o_mite:
+  env: network
+  datacenter: datacenter-1
+  rack: [% node.name %]
+  dyn_listen: 0.0.0.0:[% app.dyno_port %]
+
+  {{- range $key := lsdir "/service/dynomite/"}}
+    {{- if eq $key "instance"}}
+  dyn_seeds:
+      {{- range $instance_name := ls "/service/dynomite/instance"}}
+        {{- $instance := json (getv (printf "/service/dynomite/instance/%s" $instance_name))}}
+  - {{ $instance.ip }}:{{ $instance.port }}:datacenter-1:{{ $instance.node }}:0
+      {{- end}}
+    {{- end}}
+  {{- end}}
+  listen: 0.0.0.0:[% app.expose %]
+  servers:
+  - 127.0.0.1:6379:1
+
+  tokens: '0'
+  secure_server_option: none
+  data_store: 0
+  stats_listen: 0.0.0.0:6902
+  

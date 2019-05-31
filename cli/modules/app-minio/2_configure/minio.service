@@ -1,0 +1,33 @@
+[Unit]
+Description=MinIO
+Documentation=https://docs.min.io
+Wants=network-online.target
+After=network-online.target
+AssertFileIsExecutable=/usr/local/sbin/minio
+
+[Service]
+#Type=forking
+# Minio User
+User=[% app.user %]
+Group=[% app.user %]
+
+# Settings, created by 2_configure
+EnvironmentFile=/etc/default/minio
+
+ExecStartPre=/bin/bash -c "if [ -z \"${MINIO_ACCESS_KEY}\" ]; then echo \"Variable MINIO_ACCESS_KEY not set in /etc/default/minio\"; exit 1; fi"
+ExecStartPre=/bin/bash -c "if [ -z \"${MINIO_SECRET_KEY}\" ]; then echo \"Variable MINIO_SECRET_KEY not set in /etc/default/minio\"; exit 1; fi"
+
+# https://docs.min.io/docs/distributed-minio-quickstart-guide.html
+# TODO: Render this from etcd? Compare with dynomite
+# Need to register in configure script
+ExecStart=/usr/local/sbin/minio server $MINIO_OPTS $MINIO_NODES
+
+ExecStartPost=/usr/local/bin/register_app.sh register-app-instance --type=frontend --name=minio-browser --value="{ \"node\": \"[% node.name %]\", \"ip\": \"[% node.name %]\", \"port\": 19000 }"
+ExecStop=/usr/local/bin/register_app.sh unregister-app-instance --type=frontend --name=minio-browser
+
+
+# Specifies the maximum file descriptor number that can be opened by this process
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

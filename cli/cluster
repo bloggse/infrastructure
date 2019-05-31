@@ -1,0 +1,391 @@
+#!/bin/bash
+CURR_PATH="$(cd "$(dirname "$0")" && pwd)"
+THIS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+SSH_OPTS="-o StrictHostKeyChecking=no -o ServerAliveInterval=60"
+source ${THIS_DIR}/common/cluster_includes.sh
+CR=$'\n'
+_start=`date +%s`
+
+##
+if [ "$1" = "help" ]; then
+  echo <<EOF
+Usage: cluster  [help | install | [command --cluster=cluster.cfg [options]]]
+
+install
+Install tools used by this cli
+  
+create-ctrl
+Creates the control plane with three etcd nodes
+
+create-node --type=[worker|ingress|service] --group=[mongodb|redis|elasticsearch] --nrof-nodes=[3] --machine-type=[hetzner-type]
+Creates a cluster node, adds it to the cluster and optionally connects to other nodes in the same group over vpn0
+
+destroy-node --name=[node001[,...]]
+Remove all app instances on this node. If node has the last instance of an app, abort with message before doing anything. When all app instances have been removed, de-register the node and detroy it
+
+Services are installed by:
+
+1. Creating required service nodes
+
+2. Running Ansible script (or similar) against these hosts
+
+3. Register the service ingress (multiple)
+
+EOF
+  exit 0
+fi
+
+if [[ "$@" == *"--watch"* ]]; then
+  newArgs="${@/--watch//}"
+  newArgs="${newArgs/--dry-run//}"
+  newArgs="$newArgs --dry-run"
+  echo "$newArgs"
+  ag -l | entr $0 $newArgs
+  exit 0
+fi
+
+for i in "$@"; do
+  case $i in
+    -c=*|--cluster=*)
+    CLUSTER="${i#*=}"
+    shift # past argument=value
+    ;;
+    --rebuild)
+    REBUILD=true
+    shift # past argument=value
+    ;;
+    -f|--force)
+    FORCE=true
+    shift # past argument=value
+    ;;
+    --force-init)
+    FORCE_INIT=true
+    shift # past argument=value
+    ;;
+    --dry-run)
+    DRY_RUN=true
+    shift # past argument=value
+    printf "** dry run ** "
+    ;;
+    --create-snapshot)
+    CREATE_SNAPSHOT=true
+    shift
+    ;;
+    -r=*|--repos=*)
+    REPOS="${i#*=}"
+    shift # past argument=value
+    ;;
+    -t=*|--target=*)
+    TARGET="${i#*=}"
+    shift # past argument=value
+    ;;
+    --type=*)
+    TYPE="${i#*=}"
+    shift # past argument=value
+    ;;
+    --node-prefix=*)
+    NODE_PREFIX="${i#*=}"
+    shift # past argument=value
+    ;;
+    -n=*|--name=*)
+    NAME="${i#*=}"
+    shift # past argument=value
+    ;;
+    -g=*|--group=*)
+    GROUP="${i#*=}"
+    shift # past argument=value
+    ;;
+    -n=*|--nrof-nodes=*)
+    NROF_NODES="${i#*=}"
+    shift # past argument=value
+    ;;
+    -e=*|--eval=*)
+    EVAL="${i#*=}"
+    shift # past argument=value
+    ;;
+    -m=*|--machine-type=*)
+    MACHINE_TYPE="${i#*=}"
+    shift # past argument=value
+    ;;
+    
+    --default)
+    DEFAULT=YES
+    shift # past argument with no value
+    ;;
+    *)
+      if [[ "install create-ctrl create-node get-ctrl-vpn-keys destroy-ctrl destroy-node deploy-app remove-app ssh cmd unreg-dns" == *"${i}"* ]]; then
+        CMD="${i}"
+      fi
+    ;;
+  esac
+done
+
+
+if [ -z "$CLUSTER" ]; then
+  echo "Missing --cluster=[file.cfg] param"
+  exit 1
+elif [ ! -f "$CLUSTER" ]; then
+  echo "Given cluster config file '$CLUSTER' can't be found"
+  exit 1
+fi
+
+checkCreateNodesParams() {
+  [ -z $PROJECT_CONTEXT ] && echo 'Missing "$PROJECT_CONTEXT" in cluster-config' && theerror=1
+  [ -z $SSH_KEY_NAME ] && echo 'Missing "$SSH_KEY_NAME" in cluster-config (this is the name of the private key file to use)' && theerror=1
+  [ -z $CTRL_BASE_VPN_IP ] && echo 'Missing "$CTRL_BASE_VPN_IP" in cluster-config' && theerror=1
+  [ -z $CTRL_PREFIX ] && echo 'Missing "$NODE_PREFIX" in cluster-config' && theerror=1
+  [ -z $SERVER_OS ] && echo 'Missing "$SERVER_OS" in cluster-config (i.e. SERVER_OS=centos-7)' && theerror=1
+  [ -z $MACHINE_TYPE ] && echo 'Missing "$MACHINE_TYPE" in cluster-config (i.e. MACHINE_TYPE=cx21)' && theerror=1
+  [ -z $LOCATION ] && echo 'Missing "$LOCATION" in cluster-config (i.e. LOCATION=hel1)' && theerror=1
+  
+  if [ "$theerror" = "1" ]; then
+    false
+  else
+    true
+  fi
+}
+
+deployApp() {
+  echo "TODO deployApp()"
+}
+
+removeApp() {
+  echo "TODO removeApp()"
+}
+
+install() {
+  if hash hcloud 2>/dev/null; then
+    echo "Updating hcloud cli-tool..."
+    go get -u github.com/hetznercloud/cli/cmd/hcloud
+  else
+    echo "Installing hcloud cli-tool..."
+    go get -u github.com/hetznercloud/cli/cmd/hcloud
+    source < hcloud completion bash
+  fi
+
+  if hash jq 2>/dev/null; then
+    echo "Updating jq..."
+    brew upgrade jq
+  else
+    echo "Installing jq..."
+    brew install jq
+  fi
+
+  if hash now 2>/dev/null; then
+    echo "Updating now..."
+    npm i -g now
+  else
+    echo "Installing now..."
+    npm i -g now
+  fi
+
+  if hash entr 2>/dev/null; then
+    echo "Updating entr..."
+    brew upgrade entr # yum upgrade entr
+  else
+    echo "Installing entr..."
+    brew install entr # yum install entr
+  fi
+
+  if hash tpage 2>/dev/null; then
+    echo "Template Toolkit is installed http://www.tt2.org"
+  else
+    printf "Installing Template Toolkit..."
+    if hash yum 2>/dev/null; then
+      echo " on Centos 7"
+      yum -y install perl perl-devel gcc cpan
+      sudo cpan -y Template
+    else
+      echo " on Mac OS X"
+      curl -L http://cpan.org/modules/by-module/Template/Template-Toolkit-2.26.tar.gz | tar zxf -
+      cd Template-Toolkit-2.26/
+      perl Makefile.PL
+      make
+      # make test
+      sudo make install
+    fi
+  fi
+
+  if hash ag 2>/dev/null; then
+    echo "ag is installed"
+  else
+    printf "Installing ag..."
+    if hash yum 2>/dev/null; then
+      echo " on Centos 7"
+      yum -y install ag
+    else
+      echo " on Mac OS X"
+      brew install ag
+    fi
+  fi
+}
+
+#######################
+##                   ##
+## Main Entry Points ##
+##                   ##
+#######################
+
+# -----------------------------------------------------------------------------------------------
+if [ "$CMD" = "install" ]; then
+  install
+fi
+
+# Read cluster settings
+source "$CLUSTER"
+
+# -----------------------------------------------------------------------------------------------
+if [ "$CMD" = "create-ctrl" ]; then
+  [ -z $FORCE ] && (confirm "Are you sure you want to create a new control plane? [y/N]" || exit -1)
+  [ ! -z $NODE_PREFIX ] && echo "You can't specify --node-prefix with create-ctrl, set it in --cluster=config.cfg" && exit -1
+  
+  NROF_NODES=3
+  NODE_PREFIX=$CTRL_PREFIX
+  checkCreateNodesParams || exit -1
+  
+  MODULES="log-papertrail cluster-ctrl-base ctrl-flannel-overlay"
+  createClusterNode "$CTRL_PREFIX" "$MODULES"
+fi
+
+if [ "$CMD" = "get-ctrl-vpn-keys" ]; then
+  NROF_NODES=3
+  NODE_PREFIX=$CTRL_PREFIX
+  NEW_SERVERS="${NODE_PREFIX}001 ${NODE_PREFIX}002 ${NODE_PREFIX}003"
+
+  runInitPhase "cluster-ctrl-base"
+
+  IFS=' '
+  for node in $NEW_SERVERS; do
+    printf "${_dim}"
+    (cd "$THIS_DIR/.hosts/${node}/cluster-ctrl-base" && /bin/bash "3_integration.sh")
+    printf "${_clr_}"
+  done
+  
+fi
+
+# -----------------------------------------------------------------------------------------------
+if [ "$CMD" = "create-node" ]; then
+  [ -z $TYPE ] && echo "Missing --type" && exit -1
+  [ -z $NROF_NODES ] && echo "Missing --nrof-nodes" && exit -1
+  [ -z $MACHINE_TYPE ] && echo "Using default machine type"
+
+  if [ -z $NODE_PREFIX ]; then
+    NODE_PREFIX=$TYPE
+  fi
+  checkCreateNodesParams || exit -1
+  
+
+  case $TYPE in
+    worker)
+    MODULES="log-papertrail cluster-node-base node-flannel-overlay node-service-router node-worker"
+    createClusterNode "worker" "$MODULES"
+    ;;
+
+    test)
+    MODULES="cluster-node-base"
+    createClusterNode "worker" "$MODULES"
+    ;;
+    
+    ingress)
+    # Setting up ingress
+    MODULES="log-papertrail cluster-node-base node-flannel-overlay node-service-router node-ingress"
+    createClusterNode "ingress" "$MODULES"
+    ;;
+    
+    service)
+    MODULES="log-papertrail cluster-node-base node-flannel-overlay node-service"
+    createClusterNode "service" "$MODULES"
+    ;;
+  esac
+fi
+
+# -----------------------------------------------------------------------------------------------
+if [ "$CMD" = "destroy-ctrl" ]; then
+  [ -z $FORCE ] && (confirm "Are you sure you want to destroy the ctrl plane? You will need to recreate it to be able to make changes to your cluster [y/N]" || exit -1)
+
+  echo "Destroying nodes prefixed '${CTRL_PREFIX}'"
+  # nodes=""
+  # IFS=$'\n'
+  # for TMP in `hcloud server list | grep $CTRL_PREFIX` ; do
+  #   IFS=' ' read ID NAME STATUS MASTER_IPV4 MASTER_IPV6 DATACENTER <<< $TMP
+  #   [ ! -z "$nodes" ] && nodes="${nodes}$CR"
+  #   nodes="${nodes}$NAME"
+  # done
+  getListOfServerNodes $CTRL_PREFIX; nodes="$outp"
+  echo "y" | destroyNodes "$nodes"
+
+  # nodes=""
+  # IFS=$'\n'
+  # for TMP in `now dns ls | grep $CTRL_PREFIX` ; do
+  #   IFS=' ' read ID NAME TYPE IPV4 TIME <<< $TMP
+  #   [ ! -z "$nodes" ] && nodes="${nodes}$CR"
+  #   nodes="${nodes}$ID $NAME"
+  # done
+  getListOfDNSEntries $CTRL_PREFIX; nodes="$outp"
+  echo "y" | deregisterDNS "$nodes"
+fi
+
+# -----------------------------------------------------------------------------------------------
+if [ "$CMD" = "destroy-node" ]; then
+  [ -z $NODE_PREFIX ] && echo "Missing --node-prefix" && exit -1
+  [ -z $FORCE ] && (confirm "Are you sure you want to destroy the node? All of the app instances on this node will be removed! [y/N]" || exit -1)
+
+  echo "Destroying nodes prefixed '${NODE_PREFIX}'"
+  # nodes=""
+  # IFS=$'\n'
+  # for TMP in `hcloud server list | grep $NODE_PREFIX` ; do
+  #   IFS=' ' read ID NAME STATUS MASTER_IPV4 MASTER_IPV6 DATACENTER <<< $TMP
+  #   [ ! -z "$nodes" ] && nodes="${nodes}$CR"
+  #   nodes="${nodes}$NAME"
+  # done
+  getListOfServerNodes $NODE_PREFIX; nodes="$outp"
+  echo "y" | destroyNodes "$nodes"
+  echo "y" | removeFromCtrl "$nodes"
+
+  # nodes=""
+  # IFS=$'\n'
+  # for TMP in `now dns ls | grep $NODE_PREFIX` ; do
+  #   IFS=' ' read ID NAME TYPE IPV4 TIME <<< $TMP
+  #   [ ! -z "$nodes" ] && nodes="${nodes}$CR"
+  #   nodes="${nodes}$ID $NAME"
+  # done
+  getListOfDNSEntries $NODE_PREFIX; nodes="$outp"
+  echo "y" | deregisterDNS "$nodes"
+fi
+
+# -----------------------------------------------------------------------------------------------
+if [ "$CMD" = "unreg-dns" ]; then
+  [ -z $NODE_PREFIX ] && echo "Missing --node-prefix" && exit -1
+  [ -z $FORCE ] && (confirm confirm "Are you sure you want to unreg DNS for $NODE_PREFIX [y/N]" || exit -1)
+
+  # nodes=""
+  # IFS="$CR"
+  # for TMP in `now dns ls | grep $NODE_PREFIX` ; do
+  #   IFS=' ' read ID NAME TYPE IPV4 TIME <<< $TMP
+  #   [ ! -z "$nodes" ] && nodes="${nodes}$CR"
+  #   nodes="${nodes}$ID $NAME"
+  # done
+  getListOfDNSEntries $NODE_PREFIX; nodes=$outp
+  echo "y" | deregisterDNS "$nodes"
+fi
+
+# -----------------------------------------------------------------------------------------------
+if [ "$CMD" = "ssh" ]; then
+  [ -z $TARGET ] && echo "Missing --target" && exit -1
+  ssh -i ~/.ssh/$SSH_KEY_NAME root@$TARGET.$DOMAIN $SSH_OPTS
+fi
+
+# -----------------------------------------------------------------------------------------------
+if [ "$CMD" = "cmd" ]; then
+  [ -z "$TARGET" ] && echo "Missing --target" && exit -1
+  [ -z "$EVAL" ] && echo "Missing --eval" && exit -1
+
+  IFS=","
+  for node in $TARGET
+  do
+    ssh -i ~/.ssh/$SSH_KEY_NAME root@$node.$DOMAIN $SSH_OPTS $EVAL
+  done
+fi
+
+_end=`date +%s`
+echo "Duration: $((_end-_start))"

@@ -1,0 +1,20 @@
+- name: Add ELASTICSEARCH_URI to .bashrc
+  lineinfile:
+    path: "/root/.bashrc"
+    regexp: "^export ELASTICSEARCH_URI="
+    line: "export ELASTICSEARCH_URI=http://{{ service_ingress_ip }}:9200"
+    state: present
+
+- name: Add ELASTICSEARCH_HOST to .bashrc
+  lineinfile:
+    path: "/root/.bashrc"
+    regexp: "^export ELASTICSEARCH_HOST="
+    line: "export ELASTICSEARCH_HOST={{ service_ingress_ip }}"
+    state: present
+
+- name: Add ELASTICSEARCH_PORT to .bashrc
+  lineinfile:
+    path: "/root/.bashrc"
+    regexp: "^export ELASTICSEARCH_PORT="
+    line: "export ELASTICSEARCH_PORT=9200"
+    state: present

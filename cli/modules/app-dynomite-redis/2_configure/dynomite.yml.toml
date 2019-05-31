@@ -1,0 +1,10 @@
+[template]
+keys = [
+  "/service/dynomite"
+]
+
+mode = "0644"
+src = "dynomite.yml.tmpl"
+dest = "/etc/dynomite/dynomite.yml"
+
+reload_cmd = "systemctl restart dynomite"

@@ -1,0 +1,6 @@
+- name: Install setuptools
+  apt:
+    name: [ 'python-setuptools' ]
+
+- name: Create a missing directory
+  shell: mkdir -p /var/run/mongodb

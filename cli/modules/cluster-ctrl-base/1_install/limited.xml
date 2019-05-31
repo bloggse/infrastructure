@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<zone target="DROP">
+  <short>Limit access to ssh and tinc</short>
+  <description>All incomming connections are blocked by default. Only specific services are allowed.</description>
+  <service name="ssh"/>
+  <service name="tinc"/>
+  <interface name="eth0"/>
+</zone>

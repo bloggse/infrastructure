@@ -1,0 +1,21 @@
+[Unit]
+Description=Dynomite clustered [% app.name %]
+After=network-online.target
+
+[Service]
+Restart=on-failure
+WorkingDirectory=/run/var/dynomite
+# Requires=redis
+Wants=redis
+After=redis
+
+ExecStart=/usr/local/sbin/dynomite -c /etc/dynomite/dynomite.yml
+
+# This register Redis instances because we want consumers to view this as a
+# Redis cluster. Dynomite is just an enabler
+ExecStartPost=/usr/local/bin/register_app.sh register-app-instance --type=[% app.type %] --name=[% app.name %] --value="{ \"node\": \"[% node.name %]\", \"ip\": \"[% node.name %]\", \"port\": [% app.expose %] }"
+
+ExecStop=/usr/local/bin/register_app.sh unregister-app-instance --type=[% app.type %] --name=[% app.name %]
+
+[Install]
+WantedBy=multi-user.target

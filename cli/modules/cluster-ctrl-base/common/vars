@@ -1,0 +1,23 @@
+#!/bin/bash
+SSH_KEY_NAME=[% deploy.ssh_key_name %]
+SSH_OPTS="-o StrictHostKeyChecking=no"
+INIT_MODULE="[% module_name %]"
+
+DOMAIN=[% deploy.domain %]
+
+NODE_NAME=[% node.name %]
+NODE_VPN_IP=[% vpn_ctrl.vpn_ip %]
+
+
+ETCD_NODES="[% FOR host IN etcd.nodes %][% host.name %][%- " " IF not loop.last %][% END %]"
+
+ETCD_NODE_HOSTS_FILE=$(cat <<- EOF
+[% FOR host IN etcd.nodes %]
+
+[% host.vpn_ip %][% " " %][% host.name %]
+[% END %]
+EOF
+)
+
+TINC_VPN_PORT=[% vpn_ctrl.vpn_port %]
+VPN_CTRL=[% vpn_ctrl.vpn_interface %]
