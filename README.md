@@ -5,6 +5,58 @@ TODO: Improve documentation
 TODO: Create status api and frontend 
 TODO: Use etcd to select vpn_ctrl ip-addresses
 
+## Example to create a cluster
+
+Use the `./cli/cluster_example.cfg` and `./cli/app_config_examples` app-configurations as basis for your own app configurations.
+
+```sh
+./cluster --cluster=cluster.cfg create-ctrl --force
+# If you need to fetch the vpn_ctrl keys in order to add new nodes without creating an etcd-cluster:
+# ./cluster --cluster=cluster.cfg get-ctrl-vpn-keys
+
+./cluster --cluster=cluster.cfg create-node --node-prefix=redis --nrof-nodes=2 --machine-type=cx21 --type=service --force
+./cluster --cluster=cluster.cfg create-node --node-prefix=mongodb --nrof-nodes=3 --machine-type=cx21 --type=service --force
+./cluster --cluster=cluster.cfg create-node --node-prefix=worker --nrof-nodes=4 --machine-type=cx21 --type=worker --force
+
+./cluster --cluster=cluster.cfg create-node --node-prefix=ingress --nrof-nodes=1 --machine-type=cx21 --type=ingress --force
+
+./app --cluster=cluster.cfg deploy-app --app=app_config/dynomite-redis.cfg --target="redis051,redis052"
+./app --cluster=cluster.cfg deploy-app --app=app_config/mongodb_cluster.cfg --target="mongodb053,mongodb054,mongodb055"
+
+# Generate SSL-certs before activating ingress rules
+# -k accepts self signed certificates 
+curl -k https://ingress016.[enter CLUSTER_DOMAIN]
+
+# Create DB users
+./app --cluster=cluster.cfg create-mongo-user --target="mongodb053,mongodb054,mongodb055" --db-username=testuser --db-password=testuser --db-name=testdb
+# TODO: Register user somewhere
+
+# Install some apps
+./app --cluster=cluster.cfg deploy-app --app=app_config/app_api.cfg --target="worker101,worker102"
+./app --cluster=cluster.cfg deploy-app --app=app_config/app_front.cfg --target="worker103,worker104"
+
+./app --cluster=cluster.cfg register-ingress --ingress=app_config/ingress016.cfg
+```
+
+## Example to tear down a cluster
+
+```sh
+
+# If you want to remove apps or ingress:
+./app --cluster=cluster.cfg unregister-ingress --ingress=app_config/ingress016.cfg
+
+./app --cluster=cluster.cfg remove-app --app=app_config/app_front.cfg --target="worker103,worker104"
+./app --cluster=cluster.cfg remove-app --app=app_config/app_api.cfg --target="worker101,worker102"
+
+# To remove all the nodes:
+./cluster --cluster=cluster.cfg destroy-node --node-prefix=ingress --force
+./cluster --cluster=cluster.cfg destroy-node --node-prefix=worker --force
+./cluster --cluster=cluster.cfg destroy-node --node-prefix=mongodb --force
+./cluster --cluster=cluster.cfg destroy-node --node-prefix=redis --force
+
+./cluster --cluster=cluster.cfg destroy-ctrl --force
+```
+
 ## Checklist
 - VPN (tinc) up
   - interface
