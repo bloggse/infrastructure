@@ -1,3 +1,9 @@
+# Infrastructure
+Build and maintain your own infrastructure and app-deployments through composable modules.
+
+TODO: Improve documentation
+TODO: Create status api and frontend 
+TODO: Use etcd to select vpn_ctrl ip-addresses
 
 ## Checklist
 - VPN (tinc) up
